@@ -1,6 +1,10 @@
 // toddCoxeter.cpp : Defines the entry point for the console application.
-// parsing a presentation to find all elements of a group, todd coxeter is a nascent approach to tackling the word problem, see references listed below
-// right now doesn't allow input requires user to specify number of generators since vector<array> was the easiest way to do this logically, will change this later
+// This parses a presentation (set of generators and relators to find all elements of a group, todd coxeter is a nascent approach to tackling the word problem,
+// see references listed below right now doesn't allow input requires user to specify number of generators since vector<array> was the easiest way to do this logically, need to change this later.  Heavily commented for debugging purpose.
+// http://en.wikipedia.org/wiki/Todd–Coxeter_algorithm
+// http://www.math.cornell.edu/~kbrown/7350/toddcox.pdf
+// http://web.science.mq.edu.au/~chris/groups/CHAP05%20The%20Todd-Coxeter%20Algorithm.pdf
+
 
 //#include "stdafx.h"		//vs2010 dependent
 #include <stdio.h>
@@ -69,7 +73,6 @@ todd_coxeter::todd_coxeter() {
 //will take generators and relations and construct the basic object
 void todd_coxeter::init() {
     
-    
 	generators.push_back("a");
 	generators.push_back("b");
     
@@ -108,21 +111,25 @@ void todd_coxeter::start() {
 	for(int i = 0; i<relators.size();i++)
         chains.push_back(std::to_string(starting_index) + relators[i] + std::to_string(starting_index));
     
+    
 	while(!linksFull())
     {
 		int cur_largest = cur_largest_index();								//on first iteration this will return 1 so we insert 2
 		int new_code = cur_largest + 1;
         
 #ifdef DEBUG2
-		cout<<"new code is"<<new_code<<endl;
+		cout<<"new code to be inserted is"<<new_code<<endl;
 #endif
         
+        //insert into next available position in links
 		updateNextPosition(starting_index, new_code);
+        
         //so starting_index is where we are now, new code is not always just plus one
         //ie consider the following
         //				 A	  B
         //			1	(2)	 (3)
         //here 1B3 so we are going from 1 to 3
+        
 		printLinks();
         
 		for(int i =0; i<relators.size();i++)
@@ -133,16 +140,17 @@ void todd_coxeter::start() {
 		//now concactenate what we can and reduce the set of chains
 		reduceChains();
         
-		//if(links.size() == 7)
-        //break;
 	}
-	cout<<"links table is completed, now can construct the group table"<<endl;
+    cout<<"########################################################################################################"<<endl;
+	cout<<"                       links table completed, now can construct the group table                         "<<endl;
+    cout<<"########################################################################################################"<<endl;
+    
 	printLinks();
 }
 
 
-//updates the links table
-void todd_coxeter::updateNextPosition (int& starting_index, int code) {				//first iteration receives 1,2
+//updates the links table based on next available position
+void todd_coxeter::updateNextPosition (int& starting_index, int code) {
     
 #ifdef VERBOSE
 	cout<<"starting index is "<<starting_index<<endl;
@@ -151,7 +159,7 @@ void todd_coxeter::updateNextPosition (int& starting_index, int code) {				//fir
 	for(int i = starting_index; i<links.size(); i++) {
 		for(int j = 0; j<links[i].size(); j++) {
 			if(links[i][j] == -1) {
-				//if we are at the last element of the row, we need to update starting_index to go downward on next iteration
+				//if we are at the last element of the row, we need to update starting_index to go downward on next iteration, update is left to right top to bottom
 				if (j == links[i].size() - 1) {
 					starting_index++;
 #ifdef VERBOSE
@@ -160,13 +168,13 @@ void todd_coxeter::updateNextPosition (int& starting_index, int code) {				//fir
 				}
 				links[i][j] = code;		//ie at very first iteration where starting_index = 1, first opening gives 1A2 so we put 2 in links[0][0];
                 expandLinks();
-				string suffix = to_string(indexToGenerator(j)) + to_string(code);		//if 1B2, inserted as ("B2", 1)
+				string suffix = to_string(indexToGenerator(j)) + to_string(code);		//if 1B2, insert as ("B2", 1)
 				
 #ifdef VERBOSE
 				cout<<"link created is "<<i<<suffix<<endl;
 #endif
                 
-				suffix_chains.insert(pair<string, int>(suffix, i));						//multimap is internally a pair strcuture it seems
+				suffix_chains.insert(pair<string, int>(suffix, i));
 				brake = true;
 				break;
 			}
@@ -177,12 +185,13 @@ void todd_coxeter::updateNextPosition (int& starting_index, int code) {				//fir
 }
 
 
-//new links created as a result of reduction
+//new links constructed as a result of reduction as opposed to updateNextPosition() which is user defined
 void todd_coxeter::insertLink (string link) {
     
 #ifdef VERBOSE
-    cout<<"we're inserting the new link "<<link<<endl;
+    cout<<"Inserting the new link : "<<link<<endl;
 #endif
+    
 	int prefix_index = stoi( link.substr(0,1));
 	int prefix_gen = ( generatorToIndex(link.substr(1,1)));
 	int code = stoi( link.substr(2,1));
@@ -194,19 +203,20 @@ void todd_coxeter::insertLink (string link) {
     }
 	else if( links[prefix_index][prefix_gen] == code) {
 #ifdef VERBOSE
-		cout<<"don't worry it already exists"<<endl;
+		cout<<"Link already exists"<<endl;
 #endif
 	}
 	else{
 #ifdef VERBOSE
-		cout<<"shit we have a problem needs to backup"<<endl;
+		cout<<"we have a problem needs to backup"<<endl;
 #endif
 	}
-	//need some kind of conflict resolution vs the links we create ourselves based on space consideraton alone
+	//need some kind of conflict resolution
     
 }
 
 
+//remove links(length 3) from chains
 bool todd_coxeter::cleanChains() {
 	bool cleaned = false;
     
@@ -227,8 +237,8 @@ bool todd_coxeter::cleanChains() {
 
 
 string todd_coxeter::indexToGenerator (int i) {
-	return generators[i];
     
+	return generators[i];
 }
 
 
@@ -242,8 +252,10 @@ int todd_coxeter::generatorToIndex (string gen) {
 }
 
 
-void todd_coxeter::reduceChains()
-{
+//chain reductio on prefix and suffix, prefix 1A is to be replaced by 2 if and only if 1A2 is a defined link, likewise suffix A2 is to be replaced by 1.
+void todd_coxeter::reduceChains() {
+    
+    //if reduced during current iteration we will need to rescan
 	bool reduced = false;
     
 #ifdef VERBOSE
@@ -253,7 +265,7 @@ void todd_coxeter::reduceChains()
 	for (int i = 0; i < chains.size(); i++) {
         
 #ifdef VERBOSE
-		cout<<"\nwe are looking at chain : "<<chains[i]<<endl;
+		cout<<"\nlooking at chain : "<<chains[i]<<endl;
 #endif
 		int prefix_index = stoi( chains[i].substr(0,1));
 		
@@ -284,7 +296,7 @@ void todd_coxeter::reduceChains()
 	/*int inc = 1;
      for (int i = 0; i < chains.size(); i++)
      if(chains[i].length() == 3){
-     //if we got a new link, we inser it in the links table and reduce once again
+     //if we got a new link, we insert it in the links table and reduce once again
      insertLink(chains[i]);                  //insert the link
      cleanChains();
      reduced = true;
@@ -298,14 +310,13 @@ void todd_coxeter::reduceChains()
 		reduced = true;
     
 	//reduce the suffix
-    
 #ifdef VERBOSE
 	cout<<"-------------now reducing the suffix -------------"<<endl;
 #endif
 	for (int i = 0; i < chains.size(); i++) {
         
 #ifdef VERBOSE
-		cout<<"\nwe are looking at chain : "<<chains[i]<<endl;
+		cout<<"\nlooking at chain : "<<chains[i]<<endl;
 #endif
 		int len = chains[i].size();
 		//string suffix_index = chains[i].substr(len-1, 1);
@@ -329,7 +340,7 @@ void todd_coxeter::reduceChains()
 	}
 	printChains();
 #ifdef VERBOSE
-	cout<<"----------------------------------------\none iteration of reduce completely done\n----------------------------------------"<<endl;
+	cout<<"-------------------\none iteration of reduce completely done\n--------------------"<<endl;
 #endif
     
 	/*for (int i = 0; i < chains.size(); i++)
@@ -347,7 +358,7 @@ void todd_coxeter::reduceChains()
     
 	if(reduced){
 #ifdef VERBOSE
-		cout<<"we need to rescan since we made some reductions\n\n";
+		cout<<"rescanning after links updated\n\n";
 #endif
 		reduceChains();								//redo
 		
@@ -355,12 +366,12 @@ void todd_coxeter::reduceChains()
 	else{
 #ifdef VERBOSE
 		cout<<"----------------------------------------------------------------------------------"<<endl;
-		cout<<"                   we're done for now, let's add a new link!                      "<<endl;
-		cout<<"----------------------------------------------------------------------------------"<<endl;
+		cout<<" ------------------we're done for now, let's add a new link!----------------------"<<endl;
 #endif
 	}
 }
 
+//add new row to links
 void todd_coxeter::expandLinks () {
     
     int cur_largest = cur_largest_index();								//on first iteration this will return 1 so we insert 2
@@ -377,6 +388,7 @@ void todd_coxeter::expandLinks () {
 }
 
 
+//check whether links is complete
 bool todd_coxeter::linksFull () {
 	for(int i = 1; i<links.size(); i++) {
 		for(int j = 0; j<links[i].size(); j++)
@@ -390,6 +402,7 @@ bool todd_coxeter::linksFull () {
 }
 
 
+//return current largest defined link
 int todd_coxeter::cur_largest_index() {
 	int max = 1;
 	for(int i = 0; i<links.size(); i++) {
